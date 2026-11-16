@@ -155,6 +155,7 @@ header{border-top:0!important}
 .hc-rg-check input{width:auto}
 .hc-rg-row{display:grid;grid-template-columns:1.1fr 1fr 1fr auto;gap:10px;margin-bottom:8px}
 .hc-past{background:#eceff1;color:var(--muted)}
+.hc-last{margin:10px 0;padding:8px 10px;background:#f6f8f9;border-radius:8px;font-size:14px}.hc-last .btn{margin-left:6px}
 </style>
 </head>
 <body>
@@ -2126,6 +2127,53 @@ saveStudent=function(e){
   if(document.getElementById("sTier")?.value===HC_T1C&&ed&&ed.style.display==="none")ed.querySelectorAll(".goal-editor").forEach(x=>x.remove());
   return _hcSaveStudentPD.apply(this,arguments);
 };
+
+
+/* ===== Hudson customization: view a session without editing ===== */
+function hcLastSession(gid){
+  return data.sessions.map((x,i)=>({x,i})).filter(({x})=>x.groupId===gid).sort((a,b)=>b.x.date.localeCompare(a.x.date)||b.i-a.i)[0]?.x||null;
+}
+function hcAttLabel(a){return ({present:"Present",absent:"Absent",tardy:"Tardy",late:"Late",partial:"Partial"})[a]||(a?a.charAt(0).toUpperCase()+a.slice(1):"Present")}
+function viewSession(id){
+  const x=data.sessions.find(s=>s.id===id);if(!x)return;
+  const g=data.groups.find(gr=>gr.id===x.groupId);
+  let dlg=document.getElementById("hcViewSession");
+  if(!dlg){dlg=document.createElement("dialog");dlg.id="hcViewSession";dlg.className="hc-rg";document.body.append(dlg)}
+  const rows=Object.entries(x.students||{}).map(([sid,z])=>({s:data.students.find(st=>st.id===sid),z})).sort((a,b)=>(a.s?.name||"").localeCompare(b.s?.name||""));
+  const absent=rows.filter(r=>r.z.attendance==="absent"||r.z.present===false);
+  dlg.innerHTML=`<div class="row between" style="align-items:flex-start"><div><h2 style="margin:0">${esc(g?.name||"Group")} · ${fmt(x.date)}</h2><div class="sub">${esc(g?.subject||"")}${g?.focus?" · "+esc(g.focus):""}</div></div><span class="tag">View only</span></div>
+  ${x.held?`<div class="hc-cols" style="grid-template-columns:repeat(4,1fr);margin:14px 0">
+    <div><div class="hc-label">Skill</div>${esc(x.skill||"—")}</div><div><div class="hc-label">Lesson / activity</div>${esc(x.activity||"—")}</div>
+    <div><div class="hc-label">Minutes</div>${x.duration||"—"}</div><div><div class="hc-label">Absent</div>${absent.length?absent.map(r=>esc(r.s?.name||"Unknown")).join(", "):"None"}</div></div>
+  <table><thead><tr><th>Student</th><th>Attendance</th><th>Mastery</th><th>Note</th></tr></thead><tbody>${rows.map(({s,z})=>`<tr><td><b>${esc(s?.name||"Unknown")}</b></td><td>${hcAttLabel(z.attendance)}</td><td>${z.mastery?`${z.mastery} · ${masteryLabel(z.mastery)}`:"—"}</td><td>${esc(z.note||"—")}</td></tr>`).join("")}</tbody></table>`
+  :`<div class="notice" style="margin-top:14px"><b>Not held.</b> ${esc(x.reason||"No reason given.")}</div>`}
+  <div class="row" style="justify-content:flex-end;margin-top:16px"><button type="button" class="btn" onclick="document.getElementById('hcViewSession').close();editSession('${x.id}');showView('sessions')">Edit This Session</button><button type="button" class="btn primary" onclick="document.getElementById('hcViewSession').close()">Close</button></div>`;
+  dlg.showModal();
+}
+/* "View" in Saved Sessions */
+const _hcRenderSessionsVS=renderSessions;
+renderSessions=function(){
+  _hcRenderSessionsVS.apply(this,arguments);
+  document.querySelectorAll('#sessions button[data-session-action="edit"]').forEach(b=>{
+    if(b.previousElementSibling?.classList.contains("hc-view"))return;
+    b.insertAdjacentHTML("beforebegin",`<button class="btn small hc-view" onclick="viewSession('${b.dataset.sessionId}')">View</button> `);
+  });
+};
+/* "Last session" on each group card */
+const _hcRenderGroupsVS=renderGroups;
+renderGroups=function(){
+  _hcRenderGroupsVS.apply(this,arguments);
+  const sec=document.getElementById("groups");if(!sec)return;
+  sec.querySelectorAll('button[onclick^="openGroup(\'"]').forEach(b=>{
+    const id=b.getAttribute("onclick").match(/openGroup\('([^']+)'\)/)?.[1],card=b.closest(".card");
+    if(!id||!card||card.querySelector(".hc-last"))return;
+    const x=hcLastSession(id),actions=card.querySelector('button[onclick^="startSession("],button[onclick^="openRosterManager("]')?.parentElement;
+    const absent=x?.held?Object.entries(x.students||{}).filter(([,z])=>z.attendance==="absent"||z.present===false).map(([sid])=>data.students.find(s=>s.id===sid)?.name).filter(Boolean):[];
+    const html=`<div class="hc-last"><b>Last session:</b> ${x?`${fmt(x.date)} · ${x.held?esc(x.skill||x.activity||"Held"):"Not held"}${x.held&&absent.length?` · <span class="sub">Absent: ${esc(absent.join(", "))}</span>`:""} <button class="btn small" onclick="viewSession('${x.id}')">View</button>`:'<span class="sub">None logged yet</span>'}</div>`;
+    if(actions)actions.insertAdjacentHTML("beforebegin",html);else card.insertAdjacentHTML("beforeend",html);
+  });
+};
+renderAll();
 
 
 /* ===== Hudson customization: Help & FAQ additions ===== */
